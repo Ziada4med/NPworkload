@@ -744,7 +744,7 @@
                                 <span class="activity-status status-approved" style="font-size: 0.7rem;">Approved</span>
                             </div>
                             <p style="color: var(--gray-600); font-size: 0.875rem; margin-bottom: 8px;">IT Equipment & Software</p>
-                            <p style="color: var(--gray-500); font-size: 0.8rem; margin-bottom: 8px;">contact@techcorp.com</p>
+                            <p style="color: var(--gray-500); font-size: 0.8rem; margin-bottom: 8px;"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="98fbf7f6ecf9fbecd8ecfdfbf0fbf7eae8b6fbf7f5">[email&#160;protected]</a></p>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 0.8rem; color: var(--gray-600);">Rating:</span>
                                 <div style="color: #f59e0b;">★★★★★</div>
@@ -760,7 +760,7 @@
                                 <span class="activity-status status-approved" style="font-size: 0.7rem;">Approved</span>
                             </div>
                             <p style="color: var(--gray-600); font-size: 0.875rem; margin-bottom: 8px;">Office Supplies</p>
-                            <p style="color: var(--gray-500); font-size: 0.8rem; margin-bottom: 8px;">orders@officeplus.com</p>
+                            <p style="color: var(--gray-500); font-size: 0.8rem; margin-bottom: 8px;"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="47283523223534072821212e2422372b32346924282a">[email&#160;protected]</a></p>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 0.8rem; color: var(--gray-600);">Rating:</span>
                                 <div style="color: #f59e0b;">★★★★☆</div>
@@ -776,7 +776,7 @@
                                 <span class="activity-status status-pending" style="font-size: 0.7rem;">Pending</span>
                             </div>
                             <p style="color: var(--gray-600); font-size: 0.875rem; margin-bottom: 8px;">Event Catering Services</p>
-                            <p style="color: var(--gray-500); font-size: 0.8rem; margin-bottom: 8px;">info@globalcatering.com</p>
+                            <p style="color: var(--gray-500); font-size: 0.8rem; margin-bottom: 8px;"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="84edeae2ebc4e3e8ebe6e5e8e7e5f0e1f6edeae3aae7ebe9">[email&#160;protected]</a></p>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 0.8rem; color: var(--gray-600);">Rating:</span>
                                 <div style="color: var(--gray-300);">☆☆☆☆☆</div>
@@ -876,7 +876,7 @@
         </main>
     </div>
 
-    <script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
         // Configuration - REPLACE WITH YOUR ACTUAL CREDENTIALS
         const SUPABASE_CONFIG = {
             url: 'https://fhbzzyihwbbhbojcbdcn.supabase.co', // Replace with your Supabase URL
@@ -1001,21 +1001,22 @@
                 const userInfo = parseJwt(response.credential);
                 console.log('Google user info:', userInfo);
 
-                // For demo purposes, if Supabase is not configured, show the app anyway
+                // Check if Supabase is configured
                 if (SUPABASE_CONFIG.url === 'YOUR_SUPABASE_URL') {
-                    showSuccess('Demo mode: Signed in successfully!');
-                    setTimeout(() => {
-                        showAppDemo(userInfo);
-                    }, 1000);
+                    showError('Supabase database not configured. Please update SUPABASE_CONFIG in the code.');
                     return;
                 }
 
+                // Try Supabase authentication
                 const { data, error } = await supabase.auth.signInWithIdToken({
                     provider: 'google',
                     token: response.credential,
                 });
 
-                if (error) throw error;
+                if (error) {
+                    console.error('Supabase auth error:', error);
+                    throw error;
+                }
 
                 // Create or update user record
                 await createOrUpdateUser(data.user);
@@ -1027,10 +1028,11 @@
 
             } catch (error) {
                 console.error('Authentication error:', error);
-                if (error.message && error.message.includes('OAuth')) {
-                    showError('Google OAuth configuration error. Please contact the administrator or use demo mode.');
+                
+                if (error.code === 'PGRST201') {
+                    showError('Database relationship error. Please contact administrator to fix the user_roles table constraints.');
                 } else {
-                    showError('Sign in failed. Please try again or use demo mode.');
+                    showError('Sign in failed: ' + (error.message || 'Please try again'));
                 }
             } finally {
                 setLoading(false);
@@ -1079,79 +1081,128 @@
         // Create or update user in database
         async function createOrUpdateUser(authUser) {
             try {
+                // First check if user exists
                 const { data: existingUser, error: fetchError } = await supabase
                     .from('users')
                     .select('*')
                     .eq('auth_id', authUser.id)
-                    .single();
+                    .maybeSingle();
 
-                if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned
+                if (fetchError) {
+                    console.error('Error checking for existing user:', fetchError);
                     throw fetchError;
                 }
 
                 if (!existingUser) {
-                    // Create new user
-                    const { data, error } = await supabase.rpc('create_user_from_google_auth', {
-                        p_auth_id: authUser.id,
-                        p_email: authUser.email,
-                        p_full_name: authUser.user_metadata.full_name || authUser.email,
-                        p_avatar_url: authUser.user_metadata.avatar_url,
-                        p_google_id: authUser.user_metadata.sub
-                    });
+                    console.log('Creating new user...');
+                    
+                    // Create new user directly using insert
+                    const { data: newUser, error: insertError } = await supabase
+                        .from('users')
+                        .insert({
+                            auth_id: authUser.id,
+                            email: authUser.email,
+                            full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email,
+                            avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture,
+                            google_id: authUser.user_metadata?.sub
+                        })
+                        .select()
+                        .single();
 
-                    if (error) throw error;
+                    if (insertError) {
+                        console.error('Error creating user:', insertError);
+                        throw insertError;
+                    }
+
+                    // Assign default Employee role
+                    const { data: defaultRole, error: roleError } = await supabase
+                        .from('roles')
+                        .select('id')
+                        .eq('name', 'Employee')
+                        .single();
+
+                    if (!roleError && defaultRole) {
+                        await supabase
+                            .from('user_roles')
+                            .insert({
+                                user_id: newUser.id,
+                                role_id: defaultRole.id
+                            });
+                        console.log('Default Employee role assigned');
+                    }
+
+                    console.log('New user created:', newUser);
                 } else {
+                    console.log('Updating existing user...');
+                    
                     // Update existing user
-                    const { error } = await supabase
+                    const { error: updateError } = await supabase
                         .from('users')
                         .update({
-                            avatar_url: authUser.user_metadata.avatar_url,
+                            avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture,
                             updated_at: new Date().toISOString()
                         })
                         .eq('auth_id', authUser.id);
 
-                    if (error) throw error;
+                    if (updateError) {
+                        console.error('Error updating user:', updateError);
+                        throw updateError;
+                    }
                 }
 
-                // Fetch user with permissions
+                // Load user data with roles after creation/update
                 await loadUserData(authUser.id);
 
             } catch (error) {
                 console.error('User creation/update error:', error);
-                throw error;
+                throw error; // Don't fall back to demo mode - we want to fix the real issue
             }
         }
 
         // Load user data and permissions
         async function loadUserData(authId) {
             try {
+                // First, get the user data
                 const { data: user, error: userError } = await supabase
                     .from('users')
-                    .select(`
-                        *,
-                        user_roles!inner (
-                            roles (
-                                name,
-                                permissions
-                            )
-                        )
-                    `)
+                    .select('*')
                     .eq('auth_id', authId)
                     .single();
 
                 if (userError) throw userError;
 
+                // Then, get the user roles - handle the relationship properly
+                const { data: userRoles, error: rolesError } = await supabase
+                    .from('user_roles')
+                    .select(`
+                        roles (
+                            name,
+                            permissions
+                        )
+                    `)
+                    .eq('user_id', user.id);
+
+                if (rolesError) {
+                    console.error('Failed to load roles:', rolesError);
+                    throw rolesError;
+                }
+
+                // Attach roles to user object
+                user.user_roles = userRoles || [];
                 currentUser = user;
                 
                 // Compile user permissions
                 userPermissions = {};
                 user.user_roles.forEach(userRole => {
                     const role = userRole.roles;
-                    userPermissions[role.name] = role.permissions;
+                    if (role) {
+                        userPermissions[role.name] = role.permissions;
+                    }
                 });
 
                 console.log('User loaded:', currentUser);
                 console.log('User permissions:', userPermissions);
+                console.log('User roles:', Object.keys(userPermissions));
 
             } catch (error) {
                 console.error('Failed to load user data:', error);
@@ -1193,7 +1244,90 @@
                 userAvatar.style.background = '#e5e7eb';
             }
 
+            // Display user roles in the dropdown
+            updateUserRoleDisplay();
             loadDashboardData();
+        }
+
+        // Update user role display in the interface
+        function updateUserRoleDisplay() {
+            const userDropdown = document.getElementById('userDropdown');
+            
+            // Remove existing role info
+            const existingRoleInfo = userDropdown.querySelector('.role-info');
+            if (existingRoleInfo) {
+                existingRoleInfo.remove();
+            }
+
+            // Add role information
+            const roleInfo = document.createElement('div');
+            roleInfo.className = 'role-info';
+            roleInfo.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid var(--gray-200); margin-bottom: 8px;';
+            
+            if (Object.keys(userPermissions).length > 0) {
+                const roles = Object.keys(userPermissions);
+                roleInfo.innerHTML = `
+                    <div style="font-size: 0.75rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.5px;">Role${roles.length > 1 ? 's' : ''}</div>
+                    <div style="font-size: 0.875rem; font-weight: 500; color: var(--gray-900);">${roles.join(', ')}</div>
+                `;
+            } else {
+                roleInfo.innerHTML = `
+                    <div style="font-size: 0.75rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.5px;">Role</div>
+                    <div style="font-size: 0.875rem; font-weight: 500; color: var(--red-600);">No roles assigned</div>
+                `;
+            }
+
+            // Insert role info at the beginning of dropdown
+            const firstDropdownItem = userDropdown.querySelector('.dropdown-item');
+            if (firstDropdownItem) {
+                userDropdown.insertBefore(roleInfo, firstDropdownItem);
+            } else {
+                userDropdown.appendChild(roleInfo);
+            }
+
+            // Update main content based on permissions
+            updateUIBasedOnPermissions();
+        }
+
+        // Update UI elements based on user permissions
+        function updateUIBasedOnPermissions() {
+            const isAdmin = userPermissions.hasOwnProperty('Admin');
+            const isManager = userPermissions.hasOwnProperty('Manager');
+            const isProcurementOfficer = userPermissions.hasOwnProperty('Procurement Officer');
+
+            // Show/hide navigation items based on permissions
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach(item => {
+                const page = item.getAttribute('data-page');
+                
+                switch (page) {
+                    case 'reports':
+                        // Only Admin and Manager can see reports
+                        item.style.display = (isAdmin || isManager) ? 'block' : 'none';
+                        break;
+                    case 'vendors':
+                        // Admin, Manager, and Procurement Officer can manage vendors
+                        item.style.display = (isAdmin || isManager || isProcurementOfficer) ? 'block' : 'none';
+                        break;
+                    // Dashboard and Activities are visible to everyone
+                }
+            });
+
+            // Add admin notice if user is admin
+            if (isAdmin) {
+                const adminNotice = document.createElement('div');
+                adminNotice.className = 'alert alert-success';
+                adminNotice.style.margin = '16px 20px 0 20px';
+                adminNotice.innerHTML = '<strong>Admin Access:</strong> You have full system administrator privileges.';
+                
+                const existingNotice = document.querySelector('.admin-notice');
+                if (!existingNotice) {
+                    adminNotice.classList.add('admin-notice');
+                    document.querySelector('.header').after(adminNotice);
+                }
+            }
+
+            console.log('UI updated for permissions:', userPermissions);
         }
 
         // Load dashboard data
@@ -1538,6 +1672,7 @@
                 }
             } catch (error) {
                 console.error('Session restoration failed:', error);
+                // Don't show error to user, just continue to login screen
             }
         }
 
