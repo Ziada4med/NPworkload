@@ -878,7 +878,7 @@
 
     <script>
         // Configuration - REPLACE WITH YOUR ACTUAL CREDENTIALS
-       const SUPABASE_CONFIG = {
+        const SUPABASE_CONFIG = {
             url: 'https://fhbzzyihwbbhbojcbdcn.supabase.co', // Replace with your Supabase URL
             key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZoYnp6eWlod2JiaGJvamNiZGNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1NjQ0NzEsImV4cCI6MjA3NDE0MDQ3MX0.d_X2zcSdFmOFuDfIr2sdjlT6z9zWIdxqJZ1n6890E7c' // Replace with your Supabase anonymous key
         };
@@ -1027,7 +1027,11 @@
 
             } catch (error) {
                 console.error('Authentication error:', error);
-                showError('Sign in failed. Please try again.');
+                if (error.message && error.message.includes('OAuth')) {
+                    showError('Google OAuth configuration error. Please contact the administrator or use demo mode.');
+                } else {
+                    showError('Sign in failed. Please try again or use demo mode.');
+                }
             } finally {
                 setLoading(false);
             }
@@ -1328,6 +1332,7 @@
                     buttonDiv.style.padding = '20px';
                     buttonDiv.style.borderRadius = '8px';
                     buttonDiv.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+                    buttonDiv.style.maxWidth = '400px';
                     
                     // Create overlay
                     const overlay = document.createElement('div');
@@ -1366,6 +1371,19 @@
                     title.style.textAlign = 'center';
                     buttonDiv.appendChild(title);
                     
+                    // Add OAuth troubleshooting info
+                    const troubleInfo = document.createElement('div');
+                    troubleInfo.innerHTML = `
+                        <div style="background: #fef3c7; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.875rem;">
+                            <strong>OAuth Error?</strong> If you see "Access blocked" errors, the Google OAuth app needs verification. 
+                            <button onclick="enableDemoMode(); this.closest('[style*=fixed]').remove();" 
+                                    style="background: var(--primary-600); color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; margin-left: 8px;">
+                                Use Demo Mode Instead
+                            </button>
+                        </div>
+                    `;
+                    buttonDiv.appendChild(troubleInfo);
+                    
                     const googleBtnContainer = document.createElement('div');
                     googleBtnContainer.id = 'google-signin-button';
                     buttonDiv.appendChild(googleBtnContainer);
@@ -1390,10 +1408,14 @@
                     console.error('Error showing Google Sign-In:', error);
                     // Fallback to prompt method
                     try {
-                        window.google.accounts.id.prompt();
+                        window.google.accounts.id.prompt((notification) => {
+                            if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                                showError('Google Sign-In not available. OAuth app may need verification. Try demo mode instead.');
+                            }
+                        });
                     } catch (promptError) {
                         console.error('Prompt also failed:', promptError);
-                        showError('Authentication service error. Please try again or refresh the page.');
+                        showError('Google OAuth error. The app may need verification. Use demo mode to continue.');
                     }
                 }
             } else {
